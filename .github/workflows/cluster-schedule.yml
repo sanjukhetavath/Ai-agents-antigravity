@@ -1,0 +1,51 @@
+name: 'Cluster Schedule (Stop/Start)'
+
+on:
+  schedule:
+    # Stop cluster at 8 PM AEST (10 AM UTC) every day
+    - cron: '0 10 * * *'
+    # Start cluster at 8 AM AEST (10 PM UTC) Monday to Friday
+    - cron: '0 22 * * 0-4'
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'status'
+        type: choice
+        options:
+        - start
+        - stop
+        - status
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  manage-cluster:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Run Schedule Script
+        shell: pwsh
+        run: |
+          $Action = "${{ github.event.inputs.action }}"
+          
+          if ("${{ github.event_name }}" -eq "schedule") {
+            # Determine action based on cron time
+            $Hour = (Get-Date).ToUniversalTime().Hour
+            if ($Hour -eq 10) { $Action = "stop" }
+            if ($Hour -eq 22) { $Action = "start" }
+          }
+          
+          ./scripts/cluster-schedule.ps1 -Action $Action -ResourceGroup "ai-agents-dev-rg" -ClusterName "ai-agents-dev-aks"
